@@ -127,7 +127,6 @@ const AddCocktails = () => {
       return formData.append(key, body[key])
     });
     await dispatch(postRequest(formData));
-    await dispatch(historyPush('/'));
   };
 
   return (

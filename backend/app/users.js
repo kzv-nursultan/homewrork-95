@@ -4,21 +4,20 @@ const Users = require('../models/Users');
 const config = require('../config');
 const axios = require("axios");
 const path = require("path");
-const {downloadAvatar} = require("../utils");
 const {nanoid} = require("nanoid");
-//const { OAuth2Client } = require('google-auth-library');
-const upload = require('../multer').avatar;
+const { OAuth2Client } = require('google-auth-library');
 
-//const googleClient = new OAuth2Client(config.google.clientId);
+const googleClient = new OAuth2Client(config.google.clientId);
 const router = express.Router();
 
-router.post('/', upload.single('avatar'), async (req, res) => {
+router.post('/',  async (req, res) => {
   try {
+    const {email, password, username, avatar} = req.body;
     const user = new Users({
-      email: req.body.email,
-      password: req.body.password,
-      displayName: req.body.displayName,
-      avatar: req.file ? req.file.filename : null
+      email,
+      password,
+      username,
+      avatar,
     });
 
     user.generateToken();
@@ -33,7 +32,7 @@ router.post('/sessions', async (req, res) => {
   const user = await Users.findOne({email: req.body.email});
 
   if (!user) {
-    return res.status(401).send({message: 'Credentials are wrong'});
+    return res.status(401).send({message: 'User not found'});
   }
 
   const isMatch = await user.checkPassword(req.body.password);
@@ -44,8 +43,7 @@ router.post('/sessions', async (req, res) => {
 
   user.generateToken();
   await user.save();
-
-  return res.send({message: 'Email and password correct!', user});
+  return res.send(user);
 });
 
 router.delete('/sessions', async (req, res) => {
@@ -66,88 +64,80 @@ router.delete('/sessions', async (req, res) => {
 });
 
 router.post('/facebookLogin', async (req, res) => {
-  console.log(req.body);
-
   const inputToken = req.body.accessToken;
-
   const accessToken = config.facebook.appId + '|' + config.facebook.appSecret;
-
   const debugTokenUrl = `https://graph.facebook.com/debug_token?input_token=${inputToken}&access_token=${accessToken}`;
 
   try {
     const response = await axios.get(debugTokenUrl);
 
     if (response.data.data.error) {
-      console.log(response.data);
-      return res.status(401).send({global: 'Facebook token incorrect'});
+      return res.status(401).send({message: 'Facebook token incorrect'});
     }
 
-    console.log(response.data);
-
-    if (response.data.data['user_id'] !== req.body.id) {
-      return res.status(401).send({global: 'Users ID incorrect'});
+    if (req.body.id !== response.data.data?.user_id) {
+      return res.status(401).send({message: 'Wrong user ID'});
     }
 
     let user = await Users.findOne({email: req.body.email});
 
     if (!user) {
-      user = await Users.findOne({facebookId: req.body.id});
-    }
-
-    const pictureUrl = req.body.picture.data.url;
-    const avatarFilename = await downloadAvatar(pictureUrl);
-
-    if (!user) {
       user = new Users({
-        email: req.body.email || nanoid(),
+        email: req.body.email,
         password: nanoid(),
-        facebookId: req.body.id,
-        displayName: req.body.name,
+        username: req.body.name,
+        avatar: req.body.picture.data.url,
       });
     }
 
-    user.avatar = avatarFilename;
     user.generateToken();
     await user.save();
 
-    res.send({message: 'Success', user});
+    return res.send(user);
   } catch (e) {
-    console.error(e);
-    return res.status(401).send({global: 'Facebook token incorrect'})
+    console.log(e);
+    res.status(400).send(e);
   }
 });
 
-// router.post('/googleLogin', async (req, res) => {
-//   try {
-//     const ticket = await googleClient.verifyIdToken({
-//       idToken: req.body.tokenId,
-//       audience: process.env.CLIENT_ID
-//     });
-//
-//     const {name, email, sub: ticketUserId} = ticket.getPayload();
-//
-//     if (req.body.googleId !== ticketUserId) {
-//       return res.status(401).send({global: 'Users ID incorrect'});
-//     }
-//
-//     let user = await Users.findOne({email});
-//
-//     if (!user) {
-//       user = new Users({
-//         email,
-//         password: nanoid(),
-//         displayName: name,
-//       });
-//     }
-//
-//     user.generateToken();
-//     await user.save();
-//
-//     res.send({message: 'Success', user});
-//   } catch (e) {
-//     console.error(e);
-//     return res.status(500).send({global: 'Server error. Please try again.'})
-//   }
-// });
+router.post('/googleLogin', async (req, res) => {
+  try {
+    const ticket = await googleClient.verifyIdToken({
+      idToken: req.body.tokenId,
+      audience: config.google.clientId
+    });
+    const {name, picture, sub: ticketUserId, email} = ticket.getPayload();
+
+    if(req.body.googleId !== ticketUserId) {
+      res.status(401).send('User ID is incorrect');
+    }
+
+    let user = await Users.findOne({email});
+    if (!user) {
+      user = new Users({
+        email,
+        password: nanoid(),
+        username: name,
+        avatar: picture,
+      });
+    }
+
+    user.generateToken();
+    await user.save();
+    res.status(200).send(user);
+  } catch (e) {
+    console.error(e);
+    res.status(400).send(e);
+  }
+})
+
+router.get('/', async (req, res) => {
+  try {
+    const users = await Users.find();
+    res.send(users);
+  } catch (e) {
+    res.send(e);
+  }
+})
 
 module.exports = router;

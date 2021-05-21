@@ -13,10 +13,28 @@ const CocktailsSchema = new Schema({
   },
   ingredients: [
     {
+      _id: false,
       name: String,
       amount: String,
     }
   ],
+  published: {
+    type: Boolean,
+    default: false,
+    required: true,
+  },
+  image: String,
+  recipe: {
+    type: String,
+    required: true,
+  },
+  rating: [
+    {
+      _id: false,
+      user: String,
+      rate: Number,
+    }
+  ]
 });
 
 const Cocktails = mongoose.model('Cocktails', CocktailsSchema);
